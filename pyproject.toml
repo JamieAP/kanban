@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kanban"
+version = "0.1.0"
+description = "SQLite-backed kanban tracker with git context capture"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+kanban = "kanban.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kanban"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
