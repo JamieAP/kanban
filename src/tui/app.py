@@ -112,7 +112,7 @@ class KanbanApp(App):
     def load_plans(self) -> None:
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT * FROM plan ORDER BY created_at DESC"
+                "SELECT * FROM plan WHERE deleted_at IS NULL ORDER BY created_at DESC"
             ).fetchall()
             self.plans = [Plan.from_row(row) for row in rows]
 
@@ -124,7 +124,7 @@ class KanbanApp(App):
     def load_tasks(self, plan_id: int) -> None:
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT * FROM task WHERE plan_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM task WHERE plan_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
                 (plan_id,),
             ).fetchall()
             self.tasks = [Task.from_row(row) for row in rows]

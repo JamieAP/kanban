@@ -5,7 +5,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from kanban.cli import main
+from src.cli import main
 
 
 @pytest.fixture

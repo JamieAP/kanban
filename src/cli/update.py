@@ -27,7 +27,7 @@ def create(ctx: Context, task_id: int, status: str, note: str | None, repo: str 
     """Create a status update on a task."""
     with db.get_connection(ctx.db) as conn:
         # Verify task exists
-        task_row = conn.execute("SELECT id, reference_repo_path FROM task WHERE id = ?", (task_id,)).fetchone()
+        task_row = conn.execute("SELECT id, reference_repo_path FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not task_row:
             raise TaskNotFoundError(task_id)
 
@@ -63,12 +63,12 @@ def list_updates(ctx: Context, task_id: int) -> None:
     """List updates for a task."""
     with db.get_connection(ctx.db) as conn:
         # Verify task exists
-        task_row = conn.execute("SELECT id FROM task WHERE id = ?", (task_id,)).fetchone()
+        task_row = conn.execute("SELECT id FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not task_row:
             raise TaskNotFoundError(task_id)
 
         rows = conn.execute(
-            "SELECT * FROM task_update WHERE task_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM task_update WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
             (task_id,),
         ).fetchall()
         updates = [Update.from_row(row) for row in rows]

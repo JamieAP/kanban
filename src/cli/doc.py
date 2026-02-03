@@ -89,17 +89,17 @@ def link(ctx: Context, plan_id: int | None, task_id: int | None, path: str, rele
     with db.get_connection(ctx.db) as conn:
         # Verify target exists
         if plan_id is not None:
-            row = conn.execute("SELECT id FROM plan WHERE id = ?", (plan_id,)).fetchone()
+            row = conn.execute("SELECT id FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
             if not row:
                 raise PlanNotFoundError(plan_id)
         else:
-            row = conn.execute("SELECT id FROM task WHERE id = ?", (task_id,)).fetchone()
+            row = conn.execute("SELECT id FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
             if not row:
                 raise TaskNotFoundError(task_id)
 
-        # Check for duplicate
+        # Check for duplicate (only among non-deleted docs)
         existing = conn.execute(
-            "SELECT id FROM linked_doc WHERE path = ? AND (plan_id = ? OR task_id = ?)",
+            "SELECT id FROM linked_doc WHERE path = ? AND (plan_id = ? OR task_id = ?) AND deleted_at IS NULL",
             (str(file_path), plan_id, task_id),
         ).fetchone()
         if existing:
@@ -135,12 +135,12 @@ def list_docs(ctx: Context, plan_id: int | None, task_id: int | None) -> None:
     with db.get_connection(ctx.db) as conn:
         if plan_id is not None:
             rows = conn.execute(
-                "SELECT * FROM linked_doc WHERE plan_id = ? ORDER BY linked_at DESC",
+                "SELECT * FROM linked_doc WHERE plan_id = ? AND deleted_at IS NULL ORDER BY linked_at DESC",
                 (plan_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM linked_doc WHERE task_id = ? ORDER BY linked_at DESC",
+                "SELECT * FROM linked_doc WHERE task_id = ? AND deleted_at IS NULL ORDER BY linked_at DESC",
                 (task_id,),
             ).fetchall()
 
@@ -168,7 +168,7 @@ def list_docs(ctx: Context, plan_id: int | None, task_id: int | None) -> None:
 def show(ctx: Context, doc_id: int, content: bool) -> None:
     """Show document details."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM linked_doc WHERE id = ?", (doc_id,)).fetchone()
+        row = conn.execute("SELECT * FROM linked_doc WHERE id = ? AND deleted_at IS NULL", (doc_id,)).fetchone()
         if not row:
             raise DocNotFoundError(doc_id)
 
@@ -195,9 +195,9 @@ def show(ctx: Context, doc_id: int, content: bool) -> None:
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @pass_context
 def unlink(ctx: Context, doc_id: int, yes: bool) -> None:
-    """Remove a linked document."""
+    """Remove a linked document (soft delete)."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM linked_doc WHERE id = ?", (doc_id,)).fetchone()
+        row = conn.execute("SELECT * FROM linked_doc WHERE id = ? AND deleted_at IS NULL", (doc_id,)).fetchone()
         if not row:
             raise DocNotFoundError(doc_id)
 
@@ -206,7 +206,7 @@ def unlink(ctx: Context, doc_id: int, yes: bool) -> None:
         if not yes and not ctx.json:
             click.confirm(f"Unlink '{doc_obj.path}'?", abort=True)
 
-        conn.execute("DELETE FROM linked_doc WHERE id = ?", (doc_id,))
+        conn.execute("UPDATE linked_doc SET deleted_at = datetime('now') WHERE id = ?", (doc_id,))
         conn.commit()
 
         if ctx.json:

@@ -40,7 +40,7 @@ def create(ctx: Context, name: str, description: str | None) -> None:
 def list_plans(ctx: Context) -> None:
     """List all plans."""
     with db.get_connection(ctx.db) as conn:
-        rows = conn.execute("SELECT * FROM plan ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM plan WHERE deleted_at IS NULL ORDER BY created_at DESC").fetchall()
         plans = [Plan.from_row(row) for row in rows]
 
         if ctx.json:
@@ -59,7 +59,7 @@ def list_plans(ctx: Context) -> None:
 def show(ctx: Context, plan_id: int) -> None:
     """Show plan details."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM plan WHERE id = ?", (plan_id,)).fetchone()
+        row = conn.execute("SELECT * FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
         if not row:
             raise PlanNotFoundError(plan_id)
 
@@ -83,7 +83,7 @@ def show(ctx: Context, plan_id: int) -> None:
 def update_plan(ctx: Context, plan_id: int, name: str | None, description: str | None) -> None:
     """Update a plan."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM plan WHERE id = ?", (plan_id,)).fetchone()
+        row = conn.execute("SELECT * FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
         if not row:
             raise PlanNotFoundError(plan_id)
 
@@ -115,9 +115,9 @@ def update_plan(ctx: Context, plan_id: int, name: str | None, description: str |
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @pass_context
 def delete(ctx: Context, plan_id: int, yes: bool) -> None:
-    """Delete a plan and all its tasks."""
+    """Delete a plan and all its tasks (soft delete)."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM plan WHERE id = ?", (plan_id,)).fetchone()
+        row = conn.execute("SELECT * FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
         if not row:
             raise PlanNotFoundError(plan_id)
 
@@ -126,7 +126,14 @@ def delete(ctx: Context, plan_id: int, yes: bool) -> None:
         if not yes and not ctx.json:
             click.confirm(f"Delete plan '{plan_obj.name}' and all its tasks?", abort=True)
 
-        conn.execute("DELETE FROM plan WHERE id = ?", (plan_id,))
+        # Soft delete plan and cascade to children
+        conn.execute("UPDATE plan SET deleted_at = datetime('now') WHERE id = ?", (plan_id,))
+        conn.execute("UPDATE task SET deleted_at = datetime('now') WHERE plan_id = ? AND deleted_at IS NULL", (plan_id,))
+        conn.execute("""UPDATE task_update SET deleted_at = datetime('now')
+                        WHERE task_id IN (SELECT id FROM task WHERE plan_id = ?) AND deleted_at IS NULL""", (plan_id,))
+        conn.execute("UPDATE linked_doc SET deleted_at = datetime('now') WHERE plan_id = ? AND deleted_at IS NULL", (plan_id,))
+        conn.execute("""UPDATE linked_doc SET deleted_at = datetime('now')
+                        WHERE task_id IN (SELECT id FROM task WHERE plan_id = ?) AND deleted_at IS NULL""", (plan_id,))
         conn.commit()
 
         if ctx.json:

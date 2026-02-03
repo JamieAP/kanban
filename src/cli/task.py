@@ -27,7 +27,7 @@ def create(ctx: Context, plan_id: int, title: str, description: str | None, repo
     """Create a new task with git context capture."""
     with db.get_connection(ctx.db) as conn:
         # Verify plan exists
-        plan_row = conn.execute("SELECT id FROM plan WHERE id = ?", (plan_id,)).fetchone()
+        plan_row = conn.execute("SELECT id FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
         if not plan_row:
             raise PlanNotFoundError(plan_id)
 
@@ -74,7 +74,7 @@ def create(ctx: Context, plan_id: int, title: str, description: str | None, repo
 def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: bool) -> None:
     """List tasks."""
     with db.get_connection(ctx.db) as conn:
-        query = "SELECT * FROM task WHERE 1=1"
+        query = "SELECT * FROM task WHERE deleted_at IS NULL"
         params: list = []
 
         if plan_id is not None:
@@ -94,7 +94,7 @@ def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: b
             for t in tasks:
                 if t.id is not None:
                     update_rows = conn.execute(
-                        "SELECT * FROM task_update WHERE task_id = ? ORDER BY created_at DESC",
+                        "SELECT * FROM task_update WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
                         (t.id,),
                     ).fetchall()
                     task_updates[t.id] = [Update.from_row(row) for row in update_rows]
@@ -127,7 +127,7 @@ def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: b
 def show(ctx: Context, task_id: int) -> None:
     """Show task details."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
             raise TaskNotFoundError(task_id)
 
@@ -163,7 +163,7 @@ def show(ctx: Context, task_id: int) -> None:
 def update_task(ctx: Context, task_id: int, title: str | None, description: str | None, status: str | None, repo: str | None) -> None:
     """Update a task."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
             raise TaskNotFoundError(task_id)
 
@@ -217,9 +217,9 @@ def update_task(ctx: Context, task_id: int, title: str | None, description: str 
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @pass_context
 def delete(ctx: Context, task_id: int, yes: bool) -> None:
-    """Delete a task and all its updates."""
+    """Delete a task and all its updates (soft delete)."""
     with db.get_connection(ctx.db) as conn:
-        row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
             raise TaskNotFoundError(task_id)
 
@@ -228,7 +228,10 @@ def delete(ctx: Context, task_id: int, yes: bool) -> None:
         if not yes and not ctx.json:
             click.confirm(f"Delete task '{task_obj.title}' and all its updates?", abort=True)
 
-        conn.execute("DELETE FROM task WHERE id = ?", (task_id,))
+        # Soft delete task and cascade to children
+        conn.execute("UPDATE task SET deleted_at = datetime('now') WHERE id = ?", (task_id,))
+        conn.execute("UPDATE task_update SET deleted_at = datetime('now') WHERE task_id = ? AND deleted_at IS NULL", (task_id,))
+        conn.execute("UPDATE linked_doc SET deleted_at = datetime('now') WHERE task_id = ? AND deleted_at IS NULL", (task_id,))
         conn.commit()
 
         if ctx.json:

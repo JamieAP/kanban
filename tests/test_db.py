@@ -3,7 +3,7 @@
 import sqlite3
 import pytest
 
-from kanban.db import get_connection, get_memory_connection, init_db
+from src.db import get_connection, get_memory_connection, init_db
 
 
 def test_memory_connection_creates_tables():
@@ -51,27 +51,39 @@ def test_linked_doc_requires_exactly_one_parent(db_with_plan):
         )
 
 
-def test_cascade_delete_plan(db_with_task):
-    """Deleting a plan should cascade to tasks."""
-    db_with_task.execute("DELETE FROM plan WHERE id = 1")
+def test_soft_delete_plan(db_with_task):
+    """Soft deleting a plan should set deleted_at."""
+    db_with_task.execute("UPDATE plan SET deleted_at = datetime('now') WHERE id = 1")
     db_with_task.commit()
 
-    tasks = db_with_task.execute("SELECT * FROM task").fetchall()
-    assert len(tasks) == 0
+    # Plan still exists but is marked deleted
+    plan = db_with_task.execute("SELECT * FROM plan WHERE id = 1").fetchone()
+    assert plan is not None
+    assert plan["deleted_at"] is not None
+
+    # Filtering by deleted_at IS NULL excludes it
+    active_plans = db_with_task.execute("SELECT * FROM plan WHERE deleted_at IS NULL").fetchall()
+    assert len(active_plans) == 0
 
 
-def test_cascade_delete_task(db_with_task):
-    """Deleting a task should cascade to updates."""
+def test_soft_delete_task(db_with_task):
+    """Soft deleting a task should set deleted_at."""
     db_with_task.execute(
         "INSERT INTO task_update (task_id, status, note) VALUES (1, 'continuing', 'test')"
     )
     db_with_task.commit()
 
-    db_with_task.execute("DELETE FROM task WHERE id = 1")
+    db_with_task.execute("UPDATE task SET deleted_at = datetime('now') WHERE id = 1")
     db_with_task.commit()
 
+    # Task still exists but is marked deleted
+    task = db_with_task.execute("SELECT * FROM task WHERE id = 1").fetchone()
+    assert task is not None
+    assert task["deleted_at"] is not None
+
+    # Updates still exist (soft delete doesn't cascade automatically at DB level)
     updates = db_with_task.execute("SELECT * FROM task_update").fetchall()
-    assert len(updates) == 0
+    assert len(updates) == 1
 
 
 def test_file_connection(tmp_db):

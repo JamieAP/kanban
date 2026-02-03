@@ -3,7 +3,7 @@
 import pytest
 import sqlite3
 
-from kanban.db import init_db, get_memory_connection
+from src.db import init_db, get_memory_connection
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kanban.git import capture_context, get_repo_info
+from src.git import capture_context, get_repo_info
 
 
 def test_capture_context_in_repo(tmp_path):

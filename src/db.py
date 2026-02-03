@@ -13,16 +13,18 @@ CREATE TABLE IF NOT EXISTS plan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id INTEGER NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
+    plan_id INTEGER NOT NULL REFERENCES plan(id),
     title TEXT NOT NULL,
     description TEXT,
     status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'done')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT,
     cwd TEXT,
     reference_repo TEXT,
     reference_repo_path TEXT,
@@ -34,22 +36,24 @@ CREATE TABLE IF NOT EXISTS task (
 
 CREATE TABLE IF NOT EXISTS task_update (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL REFERENCES task(id),
     status TEXT NOT NULL CHECK (status IN ('continuing', 'blocked', 'abandoned', 'todo', 'in_progress', 'done')),
     note TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT,
     current_commit TEXT,
     repo_dirty INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS linked_doc (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id INTEGER REFERENCES plan(id) ON DELETE CASCADE,
-    task_id INTEGER REFERENCES task(id) ON DELETE CASCADE,
+    plan_id INTEGER REFERENCES plan(id),
+    task_id INTEGER REFERENCES task(id),
     path TEXT NOT NULL,
     relevance TEXT NOT NULL,
     content TEXT NOT NULL,
     linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT,
     CHECK ((plan_id IS NULL) != (task_id IS NULL))
 );
 
