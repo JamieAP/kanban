@@ -12,16 +12,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tui = [
+    "textual>=0.50",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
 ]
 
 [project.scripts]
-kanban = "kanban.cli:main"
+kanban = "src.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["kanban"]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
