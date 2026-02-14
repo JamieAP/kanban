@@ -88,28 +88,26 @@ class Task:
         return d
 
 
-TASK_STATUSES = ("todo", "in_progress", "done")
+TASK_STATUSES = ("todo", "in_progress", "blocked", "done")
 
 
 @dataclass
-class Update:
-    """A status update on a task."""
+class Note:
+    """A timestamped note on a task."""
 
     id: int | None = None
     task_id: int | None = None
-    status: str = "continuing"
-    note: str | None = None
+    text: str = ""
     created_at: datetime | None = None
     current_commit: str | None = None
     repo_dirty: bool = False
 
     @classmethod
-    def from_row(cls, row: Row) -> "Update":
+    def from_row(cls, row: Row) -> "Note":
         return cls(
             id=row["id"],
             task_id=row["task_id"],
-            status=row["status"],
-            note=row["note"],
+            text=row["text"] or "",
             created_at=datetime.fromisoformat(row["created_at"])
             if row["created_at"]
             else None,
@@ -122,9 +120,6 @@ class Update:
         if d["created_at"]:
             d["created_at"] = d["created_at"].isoformat()
         return d
-
-
-UPDATE_STATUSES = ("continuing", "blocked", "abandoned", "todo", "in_progress", "done")
 
 
 @dataclass

@@ -129,7 +129,7 @@ def delete(ctx: Context, plan_id: int, yes: bool) -> None:
         # Soft delete plan and cascade to children
         conn.execute("UPDATE plan SET deleted_at = datetime('now') WHERE id = ?", (plan_id,))
         conn.execute("UPDATE task SET deleted_at = datetime('now') WHERE plan_id = ? AND deleted_at IS NULL", (plan_id,))
-        conn.execute("""UPDATE task_update SET deleted_at = datetime('now')
+        conn.execute("""UPDATE note SET deleted_at = datetime('now')
                         WHERE task_id IN (SELECT id FROM task WHERE plan_id = ?) AND deleted_at IS NULL""", (plan_id,))
         conn.execute("UPDATE linked_doc SET deleted_at = datetime('now') WHERE plan_id = ? AND deleted_at IS NULL", (plan_id,))
         conn.execute("""UPDATE linked_doc SET deleted_at = datetime('now')

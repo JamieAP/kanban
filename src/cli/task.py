@@ -6,8 +6,8 @@ from pathlib import Path
 import click
 
 from .. import db, git
-from ..models import Task, Update, TASK_STATUSES
-from ..exceptions import PlanNotFoundError, TaskNotFoundError, InvalidStatusError
+from ..models import Task, Note, TASK_STATUSES
+from ..exceptions import PlanNotFoundError, TaskNotFoundError
 from . import pass_context, Context
 
 
@@ -69,9 +69,9 @@ def create(ctx: Context, plan_id: int, title: str, description: str | None, repo
 @task.command("list")
 @click.option("--plan", "plan_id", type=int, help="Filter by plan ID")
 @click.option("--status", type=click.Choice(TASK_STATUSES), help="Filter by status")
-@click.option("--updates", "-u", is_flag=True, help="Include updates for each task")
+@click.option("--notes", "-n", is_flag=True, help="Include notes for each task")
 @pass_context
-def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: bool) -> None:
+def list_tasks(ctx: Context, plan_id: int | None, status: str | None, notes: bool) -> None:
     """List tasks."""
     with db.get_connection(ctx.db) as conn:
         query = "SELECT * FROM task WHERE deleted_at IS NULL"
@@ -88,23 +88,23 @@ def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: b
         rows = conn.execute(query, params).fetchall()
         tasks = [Task.from_row(row) for row in rows]
 
-        # Fetch updates for each task if requested
-        task_updates: dict[int, list[Update]] = {}
-        if updates:
+        # Fetch notes for each task if requested
+        task_notes: dict[int, list[Note]] = {}
+        if notes:
             for t in tasks:
                 if t.id is not None:
-                    update_rows = conn.execute(
-                        "SELECT * FROM task_update WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
+                    note_rows = conn.execute(
+                        "SELECT * FROM note WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
                         (t.id,),
                     ).fetchall()
-                    task_updates[t.id] = [Update.from_row(row) for row in update_rows]
+                    task_notes[t.id] = [Note.from_row(row) for row in note_rows]
 
         if ctx.json:
-            if updates:
+            if notes:
                 output = []
                 for t in tasks:
                     task_dict = t.to_dict()
-                    task_dict["updates"] = [u.to_dict() for u in task_updates.get(t.id or 0, [])]
+                    task_dict["notes"] = [n.to_dict() for n in task_notes.get(t.id or 0, [])]
                     output.append(task_dict)
                 ctx.output(output)
             else:
@@ -115,10 +115,10 @@ def list_tasks(ctx: Context, plan_id: int | None, status: str | None, updates: b
             else:
                 for t in tasks:
                     ctx.output("", f"{t.id}\t[{t.status}]\t{t.title}")
-                    if updates and t.id is not None:
-                        for u in task_updates.get(t.id, []):
-                            note_preview = (u.note[:40] + "...") if u.note and len(u.note) > 40 else (u.note or "")
-                            ctx.output("", f"  └─ {u.id}\t[{u.status}]\t{u.created_at}\t{note_preview}")
+                    if notes and t.id is not None:
+                        for n in task_notes.get(t.id, []):
+                            text_preview = (n.text[:50] + "...") if len(n.text) > 50 else n.text
+                            ctx.output("", f"  └─ {n.id}\t{n.created_at}\t{text_preview}")
 
 
 @task.command("show")
@@ -153,21 +153,18 @@ def show(ctx: Context, task_id: int) -> None:
                     ctx.output("", f"  Worktree: {task_obj.reference_repo_worktree}")
 
 
-@task.command("update")
+@task.command("set")
 @click.argument("task_id", type=int)
 @click.option("--title", "-t", help="New title")
 @click.option("--description", "-d", help="New description")
 @click.option("--status", "-s", type=click.Choice(TASK_STATUSES), help="New status")
-@click.option("--repo", type=click.Path(exists=True), help="Repository path for git context (used with --status)")
 @pass_context
-def update_task(ctx: Context, task_id: int, title: str | None, description: str | None, status: str | None, repo: str | None) -> None:
-    """Update a task."""
+def set_task(ctx: Context, task_id: int, title: str | None, description: str | None, status: str | None) -> None:
+    """Set task fields."""
     with db.get_connection(ctx.db) as conn:
         row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
             raise TaskNotFoundError(task_id)
-
-        old_status = row["status"]
 
         updates = []
         params = []
@@ -185,22 +182,6 @@ def update_task(ctx: Context, task_id: int, title: str | None, description: str 
             params.append(task_id)
             conn.execute(f"UPDATE task SET {', '.join(updates)} WHERE id = ?", params)
 
-        # Log status change to task_update with git context
-        if status is not None and status != old_status:
-            repo_path = Path(repo) if repo else Path(os.getcwd())
-            git_ctx = git.capture_context(repo_path)
-            conn.execute(
-                """INSERT INTO task_update (task_id, status, note, current_commit, repo_dirty)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    task_id,
-                    status,
-                    f"Status changed from {old_status}",
-                    git_ctx.commit if git_ctx else None,
-                    git_ctx.dirty if git_ctx else False,
-                ),
-            )
-
         conn.commit()
 
         row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
@@ -212,12 +193,87 @@ def update_task(ctx: Context, task_id: int, title: str | None, description: str 
             ctx.output(f"Updated task {task_id}", f"Updated task {task_id}")
 
 
+# --- Status shortcuts ---
+
+
+@task.command("start")
+@click.argument("task_id", type=int)
+@pass_context
+def start(ctx: Context, task_id: int) -> None:
+    """Set task status to in_progress."""
+    _set_status(ctx, task_id, "in_progress")
+
+
+@task.command("done")
+@click.argument("task_id", type=int)
+@pass_context
+def done(ctx: Context, task_id: int) -> None:
+    """Set task status to done."""
+    _set_status(ctx, task_id, "done")
+
+
+@task.command("block")
+@click.argument("task_id", type=int)
+@click.argument("reason", required=False)
+@pass_context
+def block(ctx: Context, task_id: int, reason: str | None) -> None:
+    """Set task status to blocked, optionally with a note."""
+    with db.get_connection(ctx.db) as conn:
+        row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
+        if not row:
+            raise TaskNotFoundError(task_id)
+
+        conn.execute("UPDATE task SET status = 'blocked' WHERE id = ?", (task_id,))
+
+        # Add note if reason provided
+        if reason:
+            repo_path = row["reference_repo_path"] or os.getcwd()
+            git_ctx = git.capture_context(Path(repo_path))
+            conn.execute(
+                "INSERT INTO note (task_id, text, current_commit, repo_dirty) VALUES (?, ?, ?, ?)",
+                (task_id, reason, git_ctx.commit if git_ctx else None, git_ctx.dirty if git_ctx else False),
+            )
+
+        conn.commit()
+
+        if ctx.json:
+            row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
+            ctx.output(Task.from_row(row).to_dict())
+        else:
+            ctx.output(f"Blocked task {task_id}", f"Blocked task {task_id}")
+
+
+@task.command("todo")
+@click.argument("task_id", type=int)
+@pass_context
+def todo(ctx: Context, task_id: int) -> None:
+    """Set task status to todo."""
+    _set_status(ctx, task_id, "todo")
+
+
+def _set_status(ctx: Context, task_id: int, status: str) -> None:
+    """Helper to set task status."""
+    with db.get_connection(ctx.db) as conn:
+        row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
+        if not row:
+            raise TaskNotFoundError(task_id)
+
+        conn.execute("UPDATE task SET status = ? WHERE id = ?", (status, task_id))
+        conn.commit()
+
+        if ctx.json:
+            row = conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
+            ctx.output(Task.from_row(row).to_dict())
+        else:
+            ctx.output(f"Task {task_id} → {status}", f"Task {task_id} → {status}")
+
+
 @task.command("delete")
 @click.argument("task_id", type=int)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @pass_context
 def delete(ctx: Context, task_id: int, yes: bool) -> None:
-    """Delete a task and all its updates (soft delete)."""
+    """Delete a task and all its notes (soft delete)."""
     with db.get_connection(ctx.db) as conn:
         row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
@@ -226,11 +282,11 @@ def delete(ctx: Context, task_id: int, yes: bool) -> None:
         task_obj = Task.from_row(row)
 
         if not yes and not ctx.json:
-            click.confirm(f"Delete task '{task_obj.title}' and all its updates?", abort=True)
+            click.confirm(f"Delete task '{task_obj.title}' and all its notes?", abort=True)
 
         # Soft delete task and cascade to children
         conn.execute("UPDATE task SET deleted_at = datetime('now') WHERE id = ?", (task_id,))
-        conn.execute("UPDATE task_update SET deleted_at = datetime('now') WHERE task_id = ? AND deleted_at IS NULL", (task_id,))
+        conn.execute("UPDATE note SET deleted_at = datetime('now') WHERE task_id = ? AND deleted_at IS NULL", (task_id,))
         conn.execute("UPDATE linked_doc SET deleted_at = datetime('now') WHERE task_id = ? AND deleted_at IS NULL", (task_id,))
         conn.commit()
 

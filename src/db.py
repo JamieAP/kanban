@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS task (
     plan_id INTEGER NOT NULL REFERENCES plan(id),
     title TEXT NOT NULL,
     description TEXT,
-    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'done')),
+    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'blocked', 'done')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     deleted_at TEXT,
     cwd TEXT,
@@ -34,11 +34,10 @@ CREATE TABLE IF NOT EXISTS task (
     repo_dirty INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS task_update (
+CREATE TABLE IF NOT EXISTS note (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id INTEGER NOT NULL REFERENCES task(id),
-    status TEXT NOT NULL CHECK (status IN ('continuing', 'blocked', 'abandoned', 'todo', 'in_progress', 'done')),
-    note TEXT,
+    text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     deleted_at TEXT,
     current_commit TEXT,
@@ -59,7 +58,7 @@ CREATE TABLE IF NOT EXISTS linked_doc (
 
 CREATE INDEX IF NOT EXISTS idx_task_plan_id ON task(plan_id);
 CREATE INDEX IF NOT EXISTS idx_task_status ON task(status);
-CREATE INDEX IF NOT EXISTS idx_task_update_task_id ON task_update(task_id);
+CREATE INDEX IF NOT EXISTS idx_note_task_id ON note(task_id);
 CREATE INDEX IF NOT EXISTS idx_linked_doc_plan_id ON linked_doc(plan_id);
 CREATE INDEX IF NOT EXISTS idx_linked_doc_task_id ON linked_doc(task_id);
 """

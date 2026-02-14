@@ -16,7 +16,7 @@ def test_memory_connection_creates_tables():
 
         assert "plan" in table_names
         assert "task" in table_names
-        assert "task_update" in table_names
+        assert "note" in table_names
         assert "linked_doc" in table_names
 
 
@@ -34,11 +34,11 @@ def test_task_status_check_constraint(db_with_plan):
         )
 
 
-def test_update_status_check_constraint(db_with_task):
-    """Update status should be constrained to valid values."""
+def test_note_requires_text(db_with_task):
+    """Note text column should be NOT NULL."""
     with pytest.raises(sqlite3.IntegrityError):
         db_with_task.execute(
-            "INSERT INTO task_update (task_id, status) VALUES (1, 'invalid')"
+            "INSERT INTO note (task_id, text) VALUES (1, NULL)"
         )
 
 
@@ -69,7 +69,7 @@ def test_soft_delete_plan(db_with_task):
 def test_soft_delete_task(db_with_task):
     """Soft deleting a task should set deleted_at."""
     db_with_task.execute(
-        "INSERT INTO task_update (task_id, status, note) VALUES (1, 'continuing', 'test')"
+        "INSERT INTO note (task_id, text) VALUES (1, 'test note')"
     )
     db_with_task.commit()
 
@@ -81,9 +81,9 @@ def test_soft_delete_task(db_with_task):
     assert task is not None
     assert task["deleted_at"] is not None
 
-    # Updates still exist (soft delete doesn't cascade automatically at DB level)
-    updates = db_with_task.execute("SELECT * FROM task_update").fetchall()
-    assert len(updates) == 1
+    # Notes still exist (soft delete doesn't cascade automatically at DB level)
+    notes = db_with_task.execute("SELECT * FROM note").fetchall()
+    assert len(notes) == 1
 
 
 def test_file_connection(tmp_db):

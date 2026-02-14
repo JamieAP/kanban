@@ -32,12 +32,12 @@ class TaskNotFoundError(NotFoundError):
         super().__init__(f"Task {task_id} not found")
 
 
-class UpdateNotFoundError(NotFoundError):
-    """Update with given ID does not exist."""
+class NoteNotFoundError(NotFoundError):
+    """Note with given ID does not exist."""
 
-    def __init__(self, update_id: int):
-        self.update_id = update_id
-        super().__init__(f"Update {update_id} not found")
+    def __init__(self, note_id: int):
+        self.note_id = note_id
+        super().__init__(f"Note {note_id} not found")
 
 
 class DocNotFoundError(NotFoundError):

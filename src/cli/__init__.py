@@ -78,11 +78,121 @@ def handle_errors(func):
 
 
 # Import and register subcommands
-from . import plan, task, update, doc
+from . import plan, task, note, doc
 from .tui import tui
+from .. import db
+from ..models import Plan, Task, Note
 
 main.add_command(plan.plan)
 main.add_command(task.task)
-main.add_command(update.update)
+main.add_command(note.note)
 main.add_command(doc.doc)
 main.add_command(tui)
+
+
+@main.command("tree")
+@click.option("--plan", "plan_id", type=int, help="Show only a specific plan")
+@click.option("--all", "-a", "show_done", is_flag=True, help="Include done tasks")
+@pass_context
+def tree_view(ctx: Context, plan_id: int | None, show_done: bool) -> None:
+    """Show plans, tasks, and notes as a tree.
+
+    Tasks grouped by status (in_progress, blocked, todo, done) and sorted by last note within each group.
+    Done tasks are hidden by default; use -a to show them.
+    """
+    with db.get_connection(ctx.db) as conn:
+        # Get plans
+        if plan_id:
+            plan_rows = conn.execute(
+                "SELECT * FROM plan WHERE id = ? AND deleted_at IS NULL", (plan_id,)
+            ).fetchall()
+        else:
+            plan_rows = conn.execute(
+                "SELECT * FROM plan WHERE deleted_at IS NULL ORDER BY created_at DESC"
+            ).fetchall()
+
+        if not plan_rows:
+            ctx.output("No plans found", "No plans found")
+            return
+
+        plans = [Plan.from_row(row) for row in plan_rows]
+
+        # Status display order
+        status_order = ["in_progress", "blocked", "todo", "done"] if show_done else ["in_progress", "blocked", "todo"]
+
+        def get_tasks_grouped(plan_id: int) -> list[Task]:
+            """Get tasks grouped by status, sorted by last note within each group."""
+            # Query with last activity time
+            task_rows = conn.execute(
+                """SELECT t.*,
+                          COALESCE(
+                              (SELECT MAX(created_at) FROM note WHERE task_id = t.id AND deleted_at IS NULL),
+                              t.created_at
+                          ) as last_activity
+                   FROM task t
+                   WHERE t.plan_id = ? AND t.deleted_at IS NULL
+                   ORDER BY last_activity DESC""",
+                (plan_id,),
+            ).fetchall()
+
+            tasks_by_status: dict[str, list[Task]] = {s: [] for s in status_order}
+            for row in task_rows:
+                task = Task.from_row(row)
+                if task.status in tasks_by_status:
+                    tasks_by_status[task.status].append(task)
+
+            # Flatten in status order
+            result = []
+            for s in status_order:
+                result.extend(tasks_by_status[s])
+            return result
+
+        # Build output
+        if ctx.json:
+            output = []
+            for p in plans:
+                plan_dict = p.to_dict()
+                tasks = get_tasks_grouped(p.id)
+                plan_dict["tasks"] = []
+                for t in tasks:
+                    task_dict = t.to_dict()
+                    note_rows = conn.execute(
+                        "SELECT * FROM note WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
+                        (t.id,),
+                    ).fetchall()
+                    task_dict["notes"] = [Note.from_row(row).to_dict() for row in note_rows]
+                    plan_dict["tasks"].append(task_dict)
+                output.append(plan_dict)
+            ctx.output(output)
+        else:
+            # Status symbols for visual clarity
+            status_sym = {"todo": "○", "in_progress": "◐", "blocked": "✗", "done": "●"}
+
+            for i, p in enumerate(plans):
+                is_last_plan = i == len(plans) - 1
+                plan_prefix = "└─" if is_last_plan else "├─"
+                ctx.output("", f"{plan_prefix} 📋 {p.name} (plan {p.id})")
+
+                tasks = get_tasks_grouped(p.id)
+                plan_indent = "   " if is_last_plan else "│  "
+
+                for j, t in enumerate(tasks):
+                    is_last_task = j == len(tasks) - 1
+                    task_prefix = "└─" if is_last_task else "├─"
+                    sym = status_sym.get(t.status, "?")
+                    ctx.output("", f"{plan_indent}{task_prefix} {sym} [{t.status}] {t.title} (#{t.id})")
+
+                    # Get notes for this task
+                    note_rows = conn.execute(
+                        "SELECT * FROM note WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC",
+                        (t.id,),
+                    ).fetchall()
+                    notes = [Note.from_row(row) for row in note_rows]
+
+                    task_indent = plan_indent + ("   " if is_last_task else "│  ")
+
+                    for k, n in enumerate(notes):
+                        is_last_note = k == len(notes) - 1
+                        note_prefix = "└─" if is_last_note else "├─"
+                        text_preview = (n.text[:50] + "...") if len(n.text) > 50 else n.text
+                        ctx.output("", f"{task_indent}{note_prefix} 📝 {text_preview}")

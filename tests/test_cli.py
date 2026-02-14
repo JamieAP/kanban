@@ -113,7 +113,7 @@ class TestTaskCLI:
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task 1"])
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task 2"])
         runner.invoke(
-            main, ["--db", cli_db, "task", "update", "1", "--status", "done"]
+            main, ["--db", cli_db, "task", "set", "1", "--status", "done"]
         )
 
         result = runner.invoke(
@@ -122,45 +122,57 @@ class TestTaskCLI:
         assert "Task 2" in result.output
         assert "Task 1" not in result.output
 
-    def test_update_task_status(self, runner, cli_db):
+    def test_set_task_status(self, runner, cli_db):
         runner.invoke(main, ["--db", cli_db, "plan", "create", "Plan"])
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task"])
 
         result = runner.invoke(
-            main, ["--db", cli_db, "task", "update", "1", "-s", "in_progress"]
+            main, ["--db", cli_db, "task", "set", "1", "-s", "in_progress"]
         )
         assert result.exit_code == 0
 
         result = runner.invoke(main, ["--db", cli_db, "task", "show", "1"])
         assert "in_progress" in result.output
 
+    def test_task_status_shortcuts(self, runner, cli_db):
+        runner.invoke(main, ["--db", cli_db, "plan", "create", "Plan"])
+        runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task"])
 
-class TestUpdateCLI:
-    def test_create_update(self, runner, cli_db):
+        result = runner.invoke(main, ["--db", cli_db, "task", "start", "1"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(main, ["--db", cli_db, "task", "done", "1"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(main, ["--db", cli_db, "task", "todo", "1"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(main, ["--db", cli_db, "task", "block", "1", "waiting on API"])
+        assert result.exit_code == 0
+
+
+class TestNoteCLI:
+    def test_add_note(self, runner, cli_db):
         runner.invoke(main, ["--db", cli_db, "plan", "create", "Plan"])
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task"])
 
         result = runner.invoke(
             main,
-            ["--db", cli_db, "update", "create", "1", "continuing", "-n", "Progress"],
+            ["--db", cli_db, "note", "add", "1", "Progress note"],
         )
         assert result.exit_code == 0
-        assert "Created update 1" in result.output
+        assert "Added note 1" in result.output
 
-    def test_list_updates(self, runner, cli_db):
+    def test_list_notes(self, runner, cli_db):
         runner.invoke(main, ["--db", cli_db, "plan", "create", "Plan"])
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task"])
-        runner.invoke(
-            main, ["--db", cli_db, "update", "create", "1", "continuing", "-n", "First"]
-        )
-        runner.invoke(
-            main, ["--db", cli_db, "update", "create", "1", "blocked", "-n", "Second"]
-        )
+        runner.invoke(main, ["--db", cli_db, "note", "add", "1", "First note"])
+        runner.invoke(main, ["--db", cli_db, "note", "add", "1", "Second note"])
 
-        result = runner.invoke(main, ["--db", cli_db, "update", "list", "1"])
+        result = runner.invoke(main, ["--db", cli_db, "note", "list", "1"])
         assert result.exit_code == 0
-        assert "continuing" in result.output
-        assert "blocked" in result.output
+        assert "First note" in result.output
+        assert "Second note" in result.output
 
 
 class TestDocCLI:
