@@ -104,7 +104,7 @@ class TestTaskCLI:
         runner.invoke(main, ["--db", cli_db, "task", "create", "1", "Task A"])
         runner.invoke(main, ["--db", cli_db, "task", "create", "2", "Task B"])
 
-        result = runner.invoke(main, ["--db", cli_db, "task", "list", "--plan", "1"])
+        result = runner.invoke(main, ["--db", cli_db, "task", "list", "1"])
         assert "Task A" in result.output
         assert "Task B" not in result.output
 

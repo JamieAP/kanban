@@ -67,15 +67,12 @@ def create(ctx: Context, plan_id: int, title: str, description: str | None, repo
 
 
 @task.command("list")
-@click.argument("plan_arg", type=int, required=False, default=None)
-@click.option("--plan", "plan_id", type=int, help="Filter by plan ID")
+@click.argument("plan_id", type=int, required=False, default=None)
 @click.option("--status", type=click.Choice(TASK_STATUSES), help="Filter by status")
 @click.option("--notes", "-n", is_flag=True, help="Include notes for each task")
 @pass_context
-def list_tasks(ctx: Context, plan_arg: int | None, plan_id: int | None, status: str | None, notes: bool) -> None:
+def list_tasks(ctx: Context, plan_id: int | None, status: str | None, notes: bool) -> None:
     """List tasks."""
-    # Accept plan ID as positional arg or --plan option
-    plan_id = plan_id or plan_arg
     with db.get_connection(ctx.db) as conn:
         query = "SELECT * FROM task WHERE deleted_at IS NULL"
         params: list = []
