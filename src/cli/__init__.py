@@ -91,15 +91,18 @@ main.add_command(tui)
 
 
 @main.command("tree")
+@click.argument("plan_arg", type=int, required=False, default=None)
 @click.option("--plan", "plan_id", type=int, help="Show only a specific plan")
 @click.option("--all", "-a", "show_done", is_flag=True, help="Include done tasks")
 @pass_context
-def tree_view(ctx: Context, plan_id: int | None, show_done: bool) -> None:
+def tree_view(ctx: Context, plan_arg: int | None, plan_id: int | None, show_done: bool) -> None:
     """Show plans, tasks, and notes as a tree.
 
     Tasks grouped by status (in_progress, blocked, todo, done) and sorted by last note within each group.
     Done tasks are hidden by default; use -a to show them.
     """
+    # Accept plan ID as positional arg or --plan option
+    plan_id = plan_id or plan_arg
     with db.get_connection(ctx.db) as conn:
         # Get plans
         if plan_id:
