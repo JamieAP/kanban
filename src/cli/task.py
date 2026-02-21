@@ -128,7 +128,7 @@ def list_tasks(ctx: Context, plan_arg: int | None, plan_id: int | None, status: 
 @click.argument("task_id", type=int)
 @pass_context
 def show(ctx: Context, task_id: int) -> None:
-    """Show task details."""
+    """Show task details including notes."""
     with db.get_connection(ctx.db) as conn:
         row = conn.execute("SELECT * FROM task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if not row:
@@ -136,8 +136,17 @@ def show(ctx: Context, task_id: int) -> None:
 
         task_obj = Task.from_row(row)
 
+        # Fetch notes
+        note_rows = conn.execute(
+            "SELECT * FROM note WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at ASC",
+            (task_id,),
+        ).fetchall()
+        notes = [Note.from_row(r) for r in note_rows]
+
         if ctx.json:
-            ctx.output(task_obj.to_dict())
+            task_dict = task_obj.to_dict()
+            task_dict["notes"] = [n.to_dict() for n in notes]
+            ctx.output(task_dict)
         else:
             ctx.output("", f"ID: {task_obj.id}")
             ctx.output("", f"Plan: {task_obj.plan_id}")
@@ -154,6 +163,10 @@ def show(ctx: Context, task_id: int) -> None:
                 ctx.output("", f"  Dirty: {task_obj.repo_dirty}")
                 if task_obj.reference_repo_worktree:
                     ctx.output("", f"  Worktree: {task_obj.reference_repo_worktree}")
+            if notes:
+                ctx.output("", "Notes:")
+                for n in notes:
+                    ctx.output("", f"  [{n.id}] {n.created_at} - {n.text}")
 
 
 @task.command("set")
