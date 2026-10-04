@@ -1,14 +1,9 @@
-# Kanban CLI
-
-# Update user installation
+# Use an activated development environment.
 install:
-    ~/.local/share/kanban/venv/bin/pip install -q .
-    @echo "Updated kanban at ~/.local/bin/kanban"
+    python -m pip install -e '.[dev]'
 
-# Run tests
 test:
-    ~/.local/share/kanban/venv/bin/pytest tests/ -v
+    python -m pytest tests/ -v
 
-# Run tests quietly
 test-q:
-    ~/.local/share/kanban/venv/bin/pytest tests/ -q
+    python -m pytest tests/ -q
